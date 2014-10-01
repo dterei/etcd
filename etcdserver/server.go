@@ -130,10 +130,12 @@ type Server interface {
 	// return ErrIDRemoved if member ID is removed from the cluster, or return
 	// ErrIDNotFound if member ID is not in the cluster.
 	RemoveMember(ctx context.Context, id uint64) error
-
 	// UpdateMember attempts to update a existing member in the cluster. It will
 	// return ErrIDNotFound if the member ID does not exist.
 	UpdateMember(ctx context.Context, updateMemb Member) error
+	// SwitchLeader performs a fast-leader election (if this node is currently
+	// leader), attempting to elect the peer specified. Returns the new leader.
+	SwitchLeader(ctx context.Context, id uint64) (uint64, error)
 }
 
 type Stats interface {
@@ -508,6 +510,10 @@ func (s *EtcdServer) UpdateMember(ctx context.Context, memb Member) error {
 		Context: b,
 	}
 	return s.configure(ctx, cc)
+}
+
+func (s *EtcdServer) SwitchLeader(ctx context.Context, id uint64) (uint64, error) {
+	return s.node.FastSwitch(ctx, id)
 }
 
 // Implement the RaftTimer interface

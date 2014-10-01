@@ -44,6 +44,7 @@ const (
 	keysPrefix               = "/v2/keys"
 	deprecatedMachinesPrefix = "/v2/machines"
 	membersPrefix            = "/v2/members"
+	leaderPrefix             = "/v2/leader"
 	statsPrefix              = "/v2/stats"
 	versionPrefix            = "/version"
 )
@@ -81,6 +82,7 @@ func NewClientHandler(server *etcdserver.EtcdServer) http.Handler {
 	mux.HandleFunc(statsPrefix+"/leader", sh.serveLeader)
 	mux.Handle(membersPrefix, mh)
 	mux.Handle(membersPrefix+"/", mh)
+	mux.HandleFunc(leaderPrefix+"/", mh.switchLeader)
 	mux.Handle(deprecatedMachinesPrefix, dmh)
 	return mux
 }
@@ -232,6 +234,38 @@ func (h *membersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			w.WriteHeader(http.StatusNoContent)
 		}
+	}
+}
+
+func (h *membersHandler) switchLeader(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultServerTimeout)
+	defer cancel()
+
+	idStr := trimPrefix(r.URL.Path, leaderPrefix)
+	if idStr == "" {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := types.IDFromString(idStr)
+	if err != nil {
+		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", idStr)))
+		return
+	}
+
+	newLeader, err := h.server.SwitchLeader(ctx, uint64(id))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Etcd-Leader", types.ID(newLeader).String())
+	switch {
+	case err == etcdserver.ErrIDNotFound:
+		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", idStr)))
+	case err != nil:
+		log.Printf("etcdhttp: error switching to leader %s: %v", id, err)
+		writeError(w, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+		w.(http.Flusher).Flush()
 	}
 }
 

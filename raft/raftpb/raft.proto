@@ -36,6 +36,7 @@ enum MessageType {
 	MsgVote     = 5;
 	MsgVoteResp = 6;
 	MsgSnap     = 7;
+	MsgTimeout  = 8;
 }
 
 message Message {

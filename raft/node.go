@@ -20,6 +20,7 @@ import (
 	"errors"
 	"log"
 	"reflect"
+	"time"
 
 	"github.com/coreos/etcd/Godeps/_workspace/src/code.google.com/p/go.net/context"
 	pb "github.com/coreos/etcd/raft/raftpb"
@@ -29,7 +30,8 @@ var (
 	emptyState = pb.HardState{}
 
 	// ErrStopped is returned by methods on Nodes that have been stopped.
-	ErrStopped = errors.New("raft: stopped")
+	ErrStopped    = errors.New("raft: stopped")
+	ErrIDNotFound = errors.New("raft: ID not found")
 )
 
 // SoftState provides state that is useful for logging and debugging.
@@ -134,6 +136,9 @@ type Node interface {
 	// and snapshot data match the actual point-in-time configuration and snapshot
 	// at the given index.
 	Compact(index uint64, nodes []uint64, d []byte)
+	// FastSwitch performs a fast-leader election (if this node is currently
+	// leader), attempting to elect the peer specified. Returns the new leader.
+	FastSwitch(ctx context.Context, id uint64) (uint64, error)
 }
 
 type Peer struct {
@@ -182,6 +187,18 @@ func RestartNode(id uint64, election, heartbeat int, snapshot *pb.Snapshot, st p
 	return &n
 }
 
+// Message reply for a fast-switch message
+type FSReply struct {
+	newLeader uint64
+	err       error
+}
+
+// Message request for a fast-switch message
+type FSMsg struct {
+	lead     uint64
+	replyCh  chan FSReply
+}
+
 // node is the canonical implementation of the Node interface
 type node struct {
 	propc    chan pb.Message
@@ -193,6 +210,7 @@ type node struct {
 	tickc    chan struct{}
 	done     chan struct{}
 	stop     chan struct{}
+	leader   chan FSMsg
 }
 
 func newNode() node {
@@ -206,6 +224,7 @@ func newNode() node {
 		tickc:    make(chan struct{}),
 		done:     make(chan struct{}),
 		stop:     make(chan struct{}),
+		leader:   make(chan FSMsg),
 	}
 }
 
@@ -221,18 +240,47 @@ func (n *node) Stop() {
 	<-n.done
 }
 
+// FastSwitch performs a fast-leader election to elect the specified peer.
+func (n *node) FastSwitch(ctx context.Context, id uint64) (uint64, error) {
+	replyChan := make(chan FSReply)
+
+	select {
+	case n.leader <- FSMsg{id, replyChan}:
+		break;
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-n.done:
+		return 0, ErrStopped
+	}
+
+	select {
+	case l := <-replyChan:
+		return l.newLeader, l.err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-n.done:
+		return 0, ErrStopped
+	}
+}
+
 func (n *node) run(r *raft) {
 	var propc chan pb.Message
 	var readyc chan Ready
 	var advancec chan struct{}
+	var fsReply chan FSReply
 	var prevLastUnstablei uint64
 	var havePrevLastUnstablei bool
 	var rd Ready
 
-	lead := None
+	lead       := None
 	prevSoftSt := r.softState()
 	prevHardSt := r.HardState
-	prevSnapi := r.raftLog.snapshot.Index
+	prevSnapi  := r.raftLog.snapshot.Index
+
+	fsTime     := time.Now()
+	newLeader  := None
+	sentSwitch := false
+	err        := error(nil)
 
 	for {
 		if advancec != nil {
@@ -254,11 +302,33 @@ func (n *node) run(r *raft) {
 					log.Printf("raft: leader changed from %x to %x at term %d", lead, r.leader(), r.Term)
 				}
 				propc = n.propc
+        if fsReply != nil {
+          log.Printf("raft: fast-switch took %s\n", time.Since(fsTime))
+          fsReply <- FSReply{r.leader(), nil}
+          fsReply = nil
+        }
 			} else {
 				log.Printf("raft: lost leader %x at term %d", lead, r.Term)
 				propc = nil
 			}
 			lead = r.leader()
+		}
+
+		// try sending fast-leader-switch again.
+		if fsReply != nil && !sentSwitch {
+			if sentSwitch, err = n.tryLeaderSwitch(r, newLeader, fsTime); err != nil {
+				fsReply <- FSReply{lead, err}
+				fsReply = nil
+				if r.hasLeader() {
+					propc = n.propc
+				}
+			} else if sentSwitch {
+				// Critical we continue here! we build our `rd` structure earlier and it
+				// won't have our latest timeout message in it, and so if we don't
+				// rebuid the `rd` structure before entering the select, we would loose
+				// that message.
+				continue
+			}
 		}
 
 		select {
@@ -321,8 +391,43 @@ func (n *node) run(r *raft) {
 		case <-n.stop:
 			close(n.done)
 			return
+		case fsMsg := <-n.leader:
+			if fsReply != nil {
+				fsMsg.replyCh <- FSReply{lead, nil}
+			} else if r.state != StateLeader || fsMsg.lead == r.id {
+				fsMsg.replyCh <- FSReply{lead, nil}
+			} else if r.prs[fsMsg.lead] == nil {
+				fsMsg.replyCh <- FSReply{lead, ErrIDNotFound}
+			} else {
+				fsTime = time.Now()
+				if sentSwitch, err = n.tryLeaderSwitch(r, fsMsg.lead, fsTime); err != nil {
+					fsMsg.replyCh <- FSReply{lead, err}
+				} else {
+					newLeader = fsMsg.lead
+					fsReply = fsMsg.replyCh
+					propc = nil
+				}
+			}
 		}
 	}
+}
+
+// tryLeaderSwitch attempts to send a timeout message to the new leader if it
+// exists and is up-to-date.
+func (n *node) tryLeaderSwitch(r *raft, newLeader uint64, t time.Time) (bool, error) {
+	pr := r.prs[newLeader]
+	if pr == nil {
+		log.Printf("raft: requested new-leader (%d) non-existent: %s", newLeader,
+			r.prs)
+		return false, ErrIDNotFound
+	} else if pr.match < r.raftLog.lastIndex() {
+		// new-leader not update date! continue... should catch it up eventually.
+		return false, nil
+	}
+
+	log.Printf("raft: fast-switch update: %s\n", time.Since(t))
+	r.Step(pb.Message{Type: pb.MsgTimeout, From: r.id, To: newLeader})
+	return true, nil
 }
 
 // Tick increments the internal logical clock for this Node. Election timeouts

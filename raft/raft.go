@@ -442,6 +442,10 @@ func stepLeader(r *raft, m pb.Message) {
 		}
 	case pb.MsgVote:
 		r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
+	case pb.MsgTimeout:
+		r.send(m)
+		r.elapsed = 0
+		r.becomeFollower(r.Term, None)
 	}
 }
 
@@ -492,6 +496,9 @@ func stepFollower(r *raft, m pb.Message) {
 		} else {
 			r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 		}
+	case pb.MsgTimeout:
+		r.elapsed = 0
+		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
 	}
 }
 
