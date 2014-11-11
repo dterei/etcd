@@ -241,31 +241,33 @@ func (h *membersHandler) switchLeader(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultServerTimeout)
 	defer cancel()
 
-	idStr := trimPrefix(r.URL.Path, leaderPrefix)
-	if idStr == "" {
+	nameStr := trimPrefix(r.URL.Path, leaderPrefix)
+	if nameStr == "" {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	id, err := types.IDFromString(idStr)
-	if err != nil {
-		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", idStr)))
+	m := h.clusterInfo.MemberByName(nameStr)
+	if m == nil {
+		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", nameStr)))
 		return
 	}
 
-	newLeader, err := h.server.SwitchLeader(ctx, uint64(id))
+	newLead, err := h.server.SwitchLeader(ctx, uint64(m.ID))
+	if err == nil {
+		if m := h.clusterInfo.Member(types.ID(newLead)); m != nil {
+			w.Header().Set("X-Etcd-Leader", m.Name)
+		}
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Etcd-Leader", types.ID(newLeader).String())
 	switch {
 	case err == etcdserver.ErrIDNotFound:
-		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", idStr)))
+		writeError(w, httptypes.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such member: %s", nameStr)))
 	case err != nil:
-		log.Printf("etcdhttp: error switching to leader %s: %v", id, err)
+		log.Printf("etcdhttp: error switching to leader %s: %v", nameStr, err)
 		writeError(w, err)
 	default:
 		w.WriteHeader(http.StatusNoContent)
-		w.(http.Flusher).Flush()
 	}
 }
 

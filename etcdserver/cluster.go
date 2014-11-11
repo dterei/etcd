@@ -52,6 +52,7 @@ type ClusterInfo interface {
 	// Member retrieves a particular member based on ID, or nil if the
 	// member does not exist in the cluster
 	Member(id types.ID) *Member
+	MemberByName(name string) *Member
 	// IsIDRemoved checks whether the given ID has been removed from this
 	// cluster at some point in the past
 	IsIDRemoved(id types.ID) bool
