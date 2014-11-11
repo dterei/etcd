@@ -118,7 +118,7 @@ func (h *keysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case resp.Event != nil:
-		if err := writeKeyEvent(w, resp.Event, h.timer); err != nil {
+		if err := h.writeKeyEvent(w, resp.Event, h.timer); err != nil {
 			// Should never be reached
 			log.Printf("error writing event: %v", err)
 		}
@@ -456,7 +456,7 @@ func parseKeyRequest(r *http.Request, id uint64, clock clockwork.Clock) (etcdser
 // writeKeyEvent trims the prefix of key path in a single Event under
 // StoreKeysPrefix, serializes it and writes the resulting JSON to the given
 // ResponseWriter, along with the appropriate headers.
-func writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer) error {
+func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer) error {
 	if ev == nil {
 		return errors.New("cannot write empty Event!")
 	}
@@ -464,9 +464,21 @@ func writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTim
 	w.Header().Set("X-Etcd-Index", fmt.Sprint(ev.EtcdIndex))
 	w.Header().Set("X-Raft-Index", fmt.Sprint(rt.Index()))
 	w.Header().Set("X-Raft-Term", fmt.Sprint(rt.Term()))
-
-	if ev.IsCreated() {
-		w.WriteHeader(http.StatusCreated)
+	
+	myid := h.server.ID()
+	lead := types.ID(h.server.Lead())
+	if myid == lead || lead == 0 {
+		if ev.IsCreated() {
+			w.WriteHeader(http.StatusCreated)
+		}
+	} else {
+		w.Header().Set("X-Raft-Leader", fmt.Sprint(h.clusterInfo.Member(lead).Name))
+		w.Header().Set("X-Raft-ID", fmt.Sprint(h.clusterInfo.Member(myid).Name))
+		if ev.IsCreated() {
+			w.WriteHeader(423)
+		} else {
+			w.WriteHeader(422)
+		}
 	}
 
 	ev = trimEventPrefix(ev, etcdserver.StoreKeysPrefix)

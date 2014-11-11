@@ -117,6 +117,9 @@ type Server interface {
 	Stop()
 	// ID returns the ID of the Server.
 	ID() types.ID
+	// Leader returns the id of the last seen leader for the cluster this server
+	// is a member of.
+	Lead() uint64
 	// Do takes a request and attempts to fulfill it, returning a Response.
 	Do(ctx context.Context, r pb.Request) (Response, error)
 	// Process takes a raft message and applies it to the server's raft state
