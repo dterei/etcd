@@ -305,8 +305,7 @@ func (s *EtcdServer) Start() {
 // This function is just used for testing.
 func (s *EtcdServer) start() {
 	if s.snapCount == 0 {
-		log.Printf("etcdserver: set snapshot count to default %d", DefaultSnapCount)
-		s.snapCount = DefaultSnapCount
+		log.Printf("etcdserver: snapshots disabled")
 	}
 	s.w = wait.New()
 	s.done = make(chan struct{})
@@ -375,7 +374,7 @@ func (s *EtcdServer) run() {
 
 			s.node.Advance()
 
-			if appliedi-snapi > s.snapCount {
+			if s.snapCount != 0 && (appliedi - snapi) > s.snapCount {
 				s.snapshot(appliedi, nodes)
 				snapi = appliedi
 			}
