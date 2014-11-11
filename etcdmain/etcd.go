@@ -24,7 +24,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/coreos/etcd/discovery"
 	"github.com/coreos/etcd/etcdserver"
@@ -60,6 +62,7 @@ var (
 	durl            = fs.String("discovery", "", "Discovery service used to bootstrap the cluster")
 	dproxy          = fs.String("discovery-proxy", "", "HTTP proxy to use for traffic to discovery service")
 	snapCount       = fs.Uint64("snapshot-count", etcdserver.DefaultSnapCount, "Number of committed transactions to trigger a snapshot")
+	heapDebug       = fs.Uint64("heap-debug", 0, "Interval for logging heap size information (seconds)")
 	printVersion    = fs.Bool("version", false, "Print the version and exit")
 	forceNewCluster = fs.Bool("force-new-cluster", false, "Force to create a new one member cluster")
 
@@ -271,6 +274,18 @@ func startEtcd() error {
 			}
 		}()
 		clns = append(clns, l)
+	}
+
+	if *heapDebug > 0 {
+		go func() {
+			var m runtime.MemStats
+			c := time.Tick(time.Duration(*heapDebug) * time.Second)
+			for now := range c {
+				runtime.ReadMemStats(&m)
+				log.Printf("etcd: [%v] Total: %dkb | Heap: %dkb | Stack: %dkb\n",
+					now, m.Alloc / 1024, m.HeapAlloc / 1024, m.StackInuse / 1024)
+			}
+		}()
 	}
 
 	cfg := &etcdserver.ServerConfig{
