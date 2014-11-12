@@ -98,6 +98,8 @@ func (h *keysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !allowMethod(w, r.Method, "HEAD", "GET", "PUT", "POST", "DELETE") {
 		return
 	}
+
+	t := time.Now()
 	w.Header().Set("X-Etcd-Cluster-ID", h.clusterInfo.ID().String())
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
@@ -118,7 +120,7 @@ func (h *keysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case resp.Event != nil:
-		if err := h.writeKeyEvent(w, resp.Event, h.timer); err != nil {
+		if err := h.writeKeyEvent(w, resp.Event, h.timer, r.Method, t); err != nil {
 			// Should never be reached
 			log.Printf("error writing event: %v", err)
 		}
@@ -456,7 +458,7 @@ func parseKeyRequest(r *http.Request, id uint64, clock clockwork.Clock) (etcdser
 // writeKeyEvent trims the prefix of key path in a single Event under
 // StoreKeysPrefix, serializes it and writes the resulting JSON to the given
 // ResponseWriter, along with the appropriate headers.
-func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer) error {
+func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer, meth string, t time.Time) error {
 	if ev == nil {
 		return errors.New("cannot write empty Event!")
 	}
@@ -471,6 +473,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		if ev.IsCreated() {
 			w.WriteHeader(http.StatusCreated)
 		}
+		log.Printf("request: %s %v\n", meth, time.Since(t))
 	} else {
 		w.Header().Set("X-Raft-Leader", fmt.Sprint(h.clusterInfo.Member(lead).Name))
 		w.Header().Set("X-Raft-ID", fmt.Sprint(h.clusterInfo.Member(myid).Name))
@@ -479,6 +482,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		} else {
 			w.WriteHeader(422)
 		}
+		log.Printf("request: %s %v [proxied]\n", meth, time.Since(t))
 	}
 
 	ev = trimEventPrefix(ev, etcdserver.StoreKeysPrefix)
