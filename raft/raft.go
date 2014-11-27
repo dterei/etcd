@@ -139,7 +139,7 @@ func newRaft(id uint64, peers []uint64, election, heartbeat int) *raft {
 	for _, p := range peers {
 		r.prs[p] = &progress{}
 	}
-	r.becomeFollower(0, None)
+	r.becomeFollower(r.Term, None)
 	return r
 }
 
