@@ -34,6 +34,7 @@ import (
 const (
 	raftPrefix    = "/raft"
 	connPerSender = 4
+	senderBufSize = connPerSender * 100
 )
 
 type sendHub struct {
@@ -143,7 +144,7 @@ func newSender(tr http.RoundTripper, u string, cid types.ID, fs *stats.FollowerS
 		u:   u,
 		cid: cid,
 		fs:  fs,
-		q:   make(chan []byte),
+		q:   make(chan []byte, senderBufSize),
 	}
 	s.wg.Add(connPerSender)
 	for i := 0; i < connPerSender; i++ {
@@ -153,13 +154,15 @@ func newSender(tr http.RoundTripper, u string, cid types.ID, fs *stats.FollowerS
 }
 
 func (s *sender) send(data []byte) error {
-	select {
-	case s.q <- data:
-		return nil
-	default:
-		log.Printf("sender: reach the maximal serving to %s", s.u)
-		return fmt.Errorf("reach maximal serving")
-	}
+	s.q <- data
+	return nil
+	// select {
+	// case s.q <- data:
+	// 	return nil
+	// default:
+	// 	log.Printf("sender: reach the maximal serving to %s", s.u)
+	// 	return fmt.Errorf("reach maximal serving")
+	// }
 }
 
 func (s *sender) stop() {
