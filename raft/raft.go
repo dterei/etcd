@@ -304,6 +304,7 @@ func (r *raft) becomeFollower(term uint64, lead uint64) {
 	r.tick = r.tickElection
 	r.lead = lead
 	r.state = StateFollower
+	log.Printf("raft: became follower")
 }
 
 func (r *raft) becomeCandidate() {
@@ -369,8 +370,11 @@ func (r *raft) Step(m pb.Message) error {
 		if m.Type == pb.MsgVote {
 			lead = None
 		}
+		log.Printf("raft: becoming follower as msg with higher " +
+			"term (%d > %d) [from: %x]", m.Term, r.Term, m.From)
 		r.becomeFollower(m.Term, lead)
 	case m.Term < r.Term:
+		log.Printf("raft: received old message: %v", m)
 		// ignore
 		return nil
 	}
@@ -444,6 +448,7 @@ func stepLeader(r *raft, m pb.Message) {
 	case pb.MsgVote:
 		r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 	case pb.MsgTimeout:
+		log.Printf("raft: sending fast-leader switch [proposed-leader: %x]", m.To)
 		r.send(m)
 		r.elapsed = 0
 		r.becomeFollower(r.Term, None)
@@ -452,7 +457,7 @@ func stepLeader(r *raft, m pb.Message) {
 	case pb.MsgGCDone:
 		log.Panicf("raft: [leader] shouldn't receive this msg: %v", m)
 	case pb.MsgGCAuth:
-		log.Printf("raft: [leader] allowing to gc [pr: %d, gc: %d]", m.To, m.Index)
+		log.Printf("raft: [leader] allowing to gc [pr: %x, gc: %d]", m.To, m.Index)
 		m.Type = pb.MsgGCAllowed
 		r.send(m)
 	}
@@ -482,7 +487,7 @@ func stepCandidate(r *raft, m pb.Message) {
 	case pb.MsgGCAllowed:
 		// corner case... let's just collect for now rather than add in retry logic
 		// for GC across unexpected leader changes.
-		log.Printf("raft: [candidate] error GCAllowed! [from: %d, gc: %d]\n",
+		log.Printf("raft: [candidate] error GCAllowed! [from: %x, gc: %d]\n",
 			m.From, m.Index)
 		gcm.gcStart <- GCMsg{m.Index, false}
 	}
@@ -512,6 +517,8 @@ func stepFollower(r *raft, m pb.Message) {
 			r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 		}
 	case pb.MsgTimeout:
+		log.Printf("raft: [follower] starting fast-leader switch [old-leader: %x]",
+			r.lead)
 		r.elapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
 	case pb.MsgGCReq:
@@ -524,7 +531,7 @@ func stepFollower(r *raft, m pb.Message) {
 		m.To = r.lead
 		r.send(m)
 	case pb.MsgGCAllowed:
-		log.Printf("blade: [follower] gc allowed! [from: %d, gc: %d]",
+		log.Printf("blade: [follower] gc allowed! [from: %x, gc: %d]",
 			m.From, m.Index)
 		gcm.gcStart <- GCMsg{m.Index, false}
 	}

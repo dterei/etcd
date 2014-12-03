@@ -65,7 +65,7 @@ func SetupBlade(nodeID uint64, heapMin, pauseMin uint64, n Node) {
 	go gcManager()
 	go raftBladeManager()
 	runtime.RegisterGCCallback(gcHandler)
-	log.Printf("blade: setup finished [pr: %d]", nodeID)
+	log.Printf("blade: setup finished [pr: %x]", nodeID)
 }
 
 // gcHandler handles a GC request from the RTS
@@ -141,7 +141,7 @@ func raftBladeManager() {
 					log.Printf("blade manager: leader self-colecting [gc: %d]", m.From)
 					gcm.gcStart <- GCMsg{m.Index, false}
 				} else {
-					log.Printf("blade manager: gc request [pr: %d, gc: %d]",
+					log.Printf("blade manager: gc request [pr: %x, gc: %d]",
 						m.From, m.Index)
 					// no policy, allow when requested
 					m.Type = pb.MsgGCAuth

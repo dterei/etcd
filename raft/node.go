@@ -422,7 +422,7 @@ func (n *node) run(r *raft) {
 func (n *node) tryLeaderSwitch(r *raft, newLeader uint64, t time.Time) (bool, error) {
 	pr := r.prs[newLeader]
 	if pr == nil {
-		log.Printf("raft: requested new-leader (%d) non-existent: %s", newLeader,
+		log.Printf("raft: requested new-leader (%x) non-existent: %s", newLeader,
 			r.prs)
 		return false, ErrIDNotFound
 	} else if pr.match < r.raftLog.lastIndex() {
