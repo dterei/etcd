@@ -23,6 +23,7 @@ import (
 	"path"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/coreos/etcd/pkg/types"
 	"github.com/coreos/etcd/raft"
@@ -41,6 +42,9 @@ type ServerConfig struct {
 	NewCluster      bool
 	ForceNewCluster bool
 	Transport       *http.Transport
+	Blade           bool
+	BladeMinHeap    uint64
+	BladeMinPause   time.Duration
 }
 
 // VerifyBootstrapConfig sanity-checks the initial config and returns an error

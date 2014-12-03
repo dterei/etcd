@@ -53,6 +53,9 @@ const (
 
 	clusterStateFlagNew      = "new"
 	clusterStateFlagExisting = "existing"
+
+	defaultBladeAlloc = 200 * 1024
+	defaultBladePause = 10 * time.Millisecond
 )
 
 var (
@@ -65,6 +68,9 @@ var (
 	heapDebug       = fs.Uint64("heap-debug", 0, "Interval for logging heap size information (seconds)")
 	printVersion    = fs.Bool("version", false, "Print the version and exit")
 	forceNewCluster = fs.Bool("force-new-cluster", false, "Force to create a new one member cluster")
+	blade           = fs.Bool("blade", false, "Use Blade to manage the GC")
+	bladeMinHeap    = fs.Uint64("blade-min-heap", defaultBladeAlloc, "Minimum heap size (kb) at which to use Blade")
+	bladeMinPause   = fs.Duration("blade-min-pause", defaultBladePause, "Minimum expected GC pause (ns) for which to use Blade")
 
 	initialCluster      = fs.String("initial-cluster", "default=http://localhost:2380,default=http://localhost:7001", "Initial cluster configuration for bootstrapping")
 	initialClusterToken = fs.String("initial-cluster-token", "etcd-cluster", "Initial cluster token for the etcd cluster during bootstrap")
@@ -300,6 +306,9 @@ func startEtcd() error {
 		NewCluster:      clusterStateFlag.String() == clusterStateFlagNew,
 		ForceNewCluster: *forceNewCluster,
 		Transport:       pt,
+		Blade:           *blade,
+		BladeMinHeap:    *bladeMinHeap,
+		BladeMinPause:   *bladeMinPause,
 	}
 	var s *etcdserver.EtcdServer
 	s, err = etcdserver.NewServer(cfg)

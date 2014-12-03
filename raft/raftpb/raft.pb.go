@@ -67,38 +67,50 @@ func (x *EntryType) UnmarshalJSON(data []byte) error {
 type MessageType int32
 
 const (
-	MsgHup      MessageType = 0
-	MsgBeat     MessageType = 1
-	MsgProp     MessageType = 2
-	MsgApp      MessageType = 3
-	MsgAppResp  MessageType = 4
-	MsgVote     MessageType = 5
-	MsgVoteResp MessageType = 6
-	MsgSnap     MessageType = 7
-	MsgTimeout  MessageType = 8
+	MsgHup       MessageType = 0
+	MsgBeat      MessageType = 1
+	MsgProp      MessageType = 2
+	MsgApp       MessageType = 3
+	MsgAppResp   MessageType = 4
+	MsgVote      MessageType = 5
+	MsgVoteResp  MessageType = 6
+	MsgSnap      MessageType = 7
+	MsgTimeout   MessageType = 8
+	MsgGCReq     MessageType = 9
+	MsgGCAllowed MessageType = 10
+	MsgGCDone    MessageType = 11
+	MsgGCAuth    MessageType = 12
 )
 
 var MessageType_name = map[int32]string{
-	0: "MsgHup",
-	1: "MsgBeat",
-	2: "MsgProp",
-	3: "MsgApp",
-	4: "MsgAppResp",
-	5: "MsgVote",
-	6: "MsgVoteResp",
-	7: "MsgSnap",
-	8: "MsgTimeout",
+	0:  "MsgHup",
+	1:  "MsgBeat",
+	2:  "MsgProp",
+	3:  "MsgApp",
+	4:  "MsgAppResp",
+	5:  "MsgVote",
+	6:  "MsgVoteResp",
+	7:  "MsgSnap",
+	8:  "MsgTimeout",
+	9:  "MsgGCReq",
+	10: "MsgGCAllowed",
+	11: "MsgGCDone",
+	12: "MsgGCAuth",
 }
 var MessageType_value = map[string]int32{
-	"MsgHup":      0,
-	"MsgBeat":     1,
-	"MsgProp":     2,
-	"MsgApp":      3,
-	"MsgAppResp":  4,
-	"MsgVote":     5,
-	"MsgVoteResp": 6,
-	"MsgSnap":     7,
-	"MsgTimeout":  8,
+	"MsgHup":        0,
+	"MsgBeat":       1,
+	"MsgProp":       2,
+	"MsgApp":        3,
+	"MsgAppResp":    4,
+	"MsgVote":       5,
+	"MsgVoteResp":   6,
+	"MsgSnap":       7,
+	"MsgTimeout":    8,
+	"MsgGCReq":      9,
+	"MsgGCAllowed":  10,
+	"MsgGCDone":     11,
+	"MsgGCAuth":     12,
 }
 
 func (x MessageType) Enum() *MessageType {

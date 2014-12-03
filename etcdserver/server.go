@@ -292,6 +292,13 @@ func NewServer(cfg *ServerConfig) (*EtcdServer, error) {
 		SyncTicker: time.Tick(500 * time.Millisecond),
 		snapCount:  cfg.SnapCount,
 	}
+
+	if cfg.Blade {
+		log.Printf("etcd: using blade for gc [min heap: %dkb, min pause: %s]",
+			cfg.BladeMinHeap, cfg.BladeMinPause)
+		raft.SetupBlade(uint64(id), cfg.BladeMinHeap, uint64(cfg.BladeMinPause), n)
+	}
+
 	return s, nil
 }
 

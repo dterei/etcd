@@ -339,7 +339,12 @@ func (n *node) run(r *raft) {
 			m.From = r.id
 			r.Step(m)
 		case m := <-n.recvc:
-			r.Step(m) // raft never returns an error
+			if r.state == StateLeader &&
+				(m.Type == pb.MsgGCReq || m.Type == pb.MsgGCDone) {
+				gcm.gcReq <- m
+			} else {
+				r.Step(m) // raft never returns an error
+			}
 		case c := <-n.compactc:
 			r.compact(c.index, c.nodes, c.data)
 		case cc := <-n.confc:

@@ -19,6 +19,7 @@ package raft
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"sort"
 
@@ -446,6 +447,14 @@ func stepLeader(r *raft, m pb.Message) {
 		r.send(m)
 		r.elapsed = 0
 		r.becomeFollower(r.Term, None)
+	case pb.MsgGCReq: fallthrough
+	case pb.MsgGCAllowed: fallthrough
+	case pb.MsgGCDone:
+		log.Panicf("raft: [leader] shouldn't receive this msg: %v", m)
+	case pb.MsgGCAuth:
+		log.Printf("raft: [leader] allowing to gc [pr: %d, gc: %d]", m.To, m.Index)
+		m.Type = pb.MsgGCAllowed
+		r.send(m)
 	}
 }
 
@@ -470,6 +479,12 @@ func stepCandidate(r *raft, m pb.Message) {
 		case len(r.votes) - gr:
 			r.becomeFollower(r.Term, None)
 		}
+	case pb.MsgGCAllowed:
+		// corner case... let's just collect for now rather than add in retry logic
+		// for GC across unexpected leader changes.
+		log.Printf("raft: [candidate] error GCAllowed! [from: %d, gc: %d]\n",
+			m.From, m.Index)
+		gcm.gcStart <- GCMsg{m.Index, false}
 	}
 }
 
@@ -499,6 +514,19 @@ func stepFollower(r *raft, m pb.Message) {
 	case pb.MsgTimeout:
 		r.elapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
+	case pb.MsgGCReq:
+		log.Printf("blade: [follower] asking leader to gc! [gc: %d]", m.Index)
+		fallthrough
+	case pb.MsgGCDone:
+		if r.lead == None {
+			panic("no leader")
+		}
+		m.To = r.lead
+		r.send(m)
+	case pb.MsgGCAllowed:
+		log.Printf("blade: [follower] gc allowed! [from: %d, gc: %d]",
+			m.From, m.Index)
+		gcm.gcStart <- GCMsg{m.Index, false}
 	}
 }
 
