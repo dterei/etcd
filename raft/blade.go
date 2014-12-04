@@ -65,7 +65,6 @@ func SetupBlade(nodeID uint64, heapMin, pauseMin uint64, n Node) {
 	go gcManager()
 	go raftBladeManager()
 	runtime.RegisterGCCallback(gcHandler)
-	log.Printf("blade: setup finished [pr: %x]", nodeID)
 }
 
 // gcHandler handles a GC request from the RTS

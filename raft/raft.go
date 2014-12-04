@@ -304,7 +304,6 @@ func (r *raft) becomeFollower(term uint64, lead uint64) {
 	r.tick = r.tickElection
 	r.lead = lead
 	r.state = StateFollower
-	log.Printf("raft: became follower")
 }
 
 func (r *raft) becomeCandidate() {
@@ -370,11 +369,8 @@ func (r *raft) Step(m pb.Message) error {
 		if m.Type == pb.MsgVote {
 			lead = None
 		}
-		log.Printf("raft: becoming follower as msg with higher " +
-			"term (%d > %d) [from: %x]", m.Term, r.Term, m.From)
 		r.becomeFollower(m.Term, lead)
 	case m.Term < r.Term:
-		log.Printf("raft: received old message: %v", m)
 		// ignore
 		return nil
 	}
@@ -517,8 +513,6 @@ func stepFollower(r *raft, m pb.Message) {
 			r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 		}
 	case pb.MsgTimeout:
-		log.Printf("raft: [follower] starting fast-leader switch [old-leader: %x]",
-			r.lead)
 		r.elapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
 	case pb.MsgGCReq:
