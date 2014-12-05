@@ -311,6 +311,9 @@ func (n *node) run(r *raft) {
 				log.Printf("raft: lost leader %x at term %d", lead, r.Term)
 				propc = nil
 			}
+			if gcm.gcLeader != nil {
+				gcm.gcLeader <- GCLeader{ newLeader: r.leader(), oldLeader: lead }
+			}
 			lead = r.leader()
 		}
 

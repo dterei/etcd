@@ -200,6 +200,13 @@ func NewServer(cfg *ServerConfig) (*EtcdServer, error) {
 	if err := os.MkdirAll(cfg.SnapDir(), privateDirMode); err != nil {
 		return nil, fmt.Errorf("cannot create snapshot directory: %v", err)
 	}
+
+	if cfg.Blade {
+		log.Printf("etcd: using blade for gc [min heap: %dkb, min pause: %s]",
+			cfg.BladeMinHeap, cfg.BladeMinPause)
+		raft.InitBladeGC(cfg.BladeMinHeap, uint64(cfg.BladeMinPause))
+	}
+
 	ss := snap.New(cfg.SnapDir())
 	st := store.New()
 	var w *wal.WAL
@@ -294,9 +301,7 @@ func NewServer(cfg *ServerConfig) (*EtcdServer, error) {
 	}
 
 	if cfg.Blade {
-		log.Printf("etcd: using blade for gc [min heap: %dkb, min pause: %s]",
-			cfg.BladeMinHeap, cfg.BladeMinPause)
-		raft.SetupBlade(uint64(id), cfg.BladeMinHeap, uint64(cfg.BladeMinPause), n)
+		raft.StartBladeGC(uint64(id), n)
 	}
 
 	return s, nil

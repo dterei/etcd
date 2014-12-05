@@ -140,6 +140,7 @@ func newRaft(id uint64, peers []uint64, election, heartbeat int) *raft {
 	for _, p := range peers {
 		r.prs[p] = &progress{}
 	}
+	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 	r.becomeFollower(r.Term, None)
 	return r
 }
@@ -401,11 +402,13 @@ func (r *raft) resetPendingConf() {
 func (r *raft) addNode(id uint64) {
 	r.setProgress(id, 0, r.raftLog.lastIndex()+1)
 	r.pendingConf = false
+	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 }
 
 func (r *raft) removeNode(id uint64) {
 	r.delProgress(id)
 	r.pendingConf = false
+	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 }
 
 type stepFunc func(r *raft, m pb.Message)
@@ -485,7 +488,7 @@ func stepCandidate(r *raft, m pb.Message) {
 		// for GC across unexpected leader changes.
 		log.Printf("raft: [candidate] error GCAllowed! [from: %x, gc: %d]\n",
 			m.From, m.Index)
-		gcm.gcStart <- GCMsg{m.Index, false}
+		gcm.gcRun <- GCMsg{m.Index, false}
 	}
 }
 
@@ -527,7 +530,7 @@ func stepFollower(r *raft, m pb.Message) {
 	case pb.MsgGCAllowed:
 		log.Printf("blade: [follower] gc allowed! [from: %x, gc: %d]",
 			m.From, m.Index)
-		gcm.gcStart <- GCMsg{m.Index, false}
+		gcm.gcRun <- GCMsg{m.Index, false}
 	}
 }
 
@@ -555,6 +558,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
 			r.setProgress(n, 0, r.raftLog.lastIndex()+1)
 		}
 	}
+	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 	return true
 }
 
