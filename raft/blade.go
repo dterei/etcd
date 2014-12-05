@@ -168,7 +168,7 @@ func bladeNodeManager() {
 						// I was leader so have client requests queued, delay a moment to
 						// let them get forwarded.
 						gc := reqInFlight
-						time.AfterFunc(1 * time.Second, func() {
+						time.AfterFunc(1500 * time.Millisecond, func() {
 							log.Printf("blade: resending gc [gc: %d] (delayed)", gc)
 							requestGC(gc)
 						})
@@ -195,6 +195,8 @@ func bladeClusterManager() {
 	}
 
 	switchLeader := func(cand uint64) {
+		// delay to allow cluster to catch up in case of lots of recent collections
+		time.Sleep(1500 * time.Millisecond)
 		log.Printf("blade manager: switching leader [pr: %d]", cand)
 		gcm.n.FastSwitch(context.TODO(), cand)
 		// we don't resend here as we rely on bladeNodeManager instead
@@ -246,11 +248,12 @@ func bladeClusterManager() {
 					if gcSwitch.oldLeader == m.From {
 						gcSwitch = GCSwitch{}
 					}
-					used++
 					if m.From == gcm.id {
+						used = slots // stop anyone else collecting until leader done
 						log.Printf("blade manager: leader self-colecting [gc: %d]", m.Index)
 						go switchLeader(lastCollected)
 					} else {
+						used++
 						log.Printf("blade manager: gc request [pr: %x, gc: %d]", m.From, m.Index)
 						go send(m)
 					}
@@ -265,16 +268,17 @@ func bladeClusterManager() {
 				log.Printf("blade manager: gc finished [pr: %x, gc: %d, used: %d]",
 					m.From, m.Index, used)
 				if used < slots && pending.Len() > 0 {
-					used++
 					e := pending.Front()
 					m = e.Value.(pb.Message)
 					pending.Remove(e)
 					log.Printf("blade manager: gc resuming [pr: %x, gc: %d]",
 						m.From, m.Index)
 					if m.From == gcm.id {
+						used = slots // stop anyone else collecting until leader done
 						log.Printf("blade manager: leader self-colecting [gc: %d]", m.Index)
 						go switchLeader(lastCollected)
 					} else {
+						used++
 						go send(m)
 					}
 				}
