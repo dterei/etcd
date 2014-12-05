@@ -312,7 +312,7 @@ func (n *node) run(r *raft) {
 				propc = nil
 			}
 			if gcm.gcLeader != nil {
-				gcm.gcLeader <- GCLeader{ newLeader: r.leader(), oldLeader: lead }
+				gcm.gcLeader <- GCLeader{ newLeader: r.leader(), oldLeader: lead, term: r.Term}
 			}
 			lead = r.leader()
 		}
@@ -400,6 +400,9 @@ func (n *node) run(r *raft) {
 			close(n.done)
 			return
 		case fsMsg := <-n.leader:
+			if (fsMsg.lead == None) {
+				fsMsg.lead = r.randomNode()
+			}
 			if fsReply != nil {
 				fsMsg.replyCh <- FSReply{lead, nil}
 			} else if r.state != StateLeader || fsMsg.lead == r.id {

@@ -411,6 +411,17 @@ func (r *raft) removeNode(id uint64) {
 	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 }
 
+func (r *raft) randomNode() (id uint64) {
+	n := rand.Intn(len(r.prs))
+	for i := range r.prs {
+		n--
+		if i == r.id { continue }
+		id = i
+		if n < 0 { return }
+	}
+	return
+}
+
 type stepFunc func(r *raft, m pb.Message)
 
 func stepLeader(r *raft, m pb.Message) {
@@ -516,6 +527,7 @@ func stepFollower(r *raft, m pb.Message) {
 			r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 		}
 	case pb.MsgTimeout:
+		gcm.gcSwitch <- GCSwitch{ oldLeader: m.From, term: m.Term + 1}
 		r.elapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
 	case pb.MsgGCReq:
