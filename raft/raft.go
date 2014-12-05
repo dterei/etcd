@@ -140,7 +140,7 @@ func newRaft(id uint64, peers []uint64, election, heartbeat int) *raft {
 	for _, p := range peers {
 		r.prs[p] = &progress{}
 	}
-	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
+	if gcm != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 	r.becomeFollower(r.Term, None)
 	return r
 }
@@ -402,13 +402,13 @@ func (r *raft) resetPendingConf() {
 func (r *raft) addNode(id uint64) {
 	r.setProgress(id, 0, r.raftLog.lastIndex()+1)
 	r.pendingConf = false
-	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
+	if gcm != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 }
 
 func (r *raft) removeNode(id uint64) {
 	r.delProgress(id)
 	r.pendingConf = false
-	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
+	if gcm != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 }
 
 func (r *raft) randomNode() (id uint64) {
@@ -499,7 +499,7 @@ func stepCandidate(r *raft, m pb.Message) {
 		// for GC across unexpected leader changes.
 		log.Printf("raft: [candidate] error GCAllowed! [from: %x, gc: %d]\n",
 			m.From, m.Index)
-		gcm.gcRun <- GCMsg{m.Index, false}
+		if gcm != nil { gcm.gcRun <- GCMsg{m.Index, false} }
 	}
 }
 
@@ -527,7 +527,9 @@ func stepFollower(r *raft, m pb.Message) {
 			r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
 		}
 	case pb.MsgTimeout:
-		gcm.gcSwitch <- GCSwitch{ oldLeader: m.From, term: m.Term + 1}
+		if gcm != nil {
+			gcm.gcSwitch <- GCSwitch{ oldLeader: m.From, term: m.Term + 1}
+		}
 		r.elapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
 	case pb.MsgGCReq:
@@ -544,7 +546,7 @@ func stepFollower(r *raft, m pb.Message) {
 	case pb.MsgGCAllowed:
 		log.Printf("blade: [follower] gc allowed! [from: %x, gc: %d]",
 			m.From, m.Index)
-		gcm.gcRun <- GCMsg{m.Index, false}
+		if gcm != nil { gcm.gcRun <- GCMsg{m.Index, false} }
 	}
 }
 
@@ -572,7 +574,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
 			r.setProgress(n, 0, r.raftLog.lastIndex()+1)
 		}
 	}
-	if gcm.gcSlots != nil { gcm.gcSlots <- len(r.prs) - r.q() }
+	if gcm != nil { gcm.gcSlots <- len(r.prs) - r.q() }
 	return true
 }
 
