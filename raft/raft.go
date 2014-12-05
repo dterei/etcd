@@ -535,10 +535,12 @@ func stepFollower(r *raft, m pb.Message) {
 		fallthrough
 	case pb.MsgGCDone:
 		if r.lead == None {
-			panic("no leader")
+			log.Printf("blade: [follower] no leader, dropping gc! [pr: %d, gc: %d]",
+				m.From, m.Index)
+		} else {
+			m.To = r.lead
+			r.send(m)
 		}
-		m.To = r.lead
-		r.send(m)
 	case pb.MsgGCAllowed:
 		log.Printf("blade: [follower] gc allowed! [from: %x, gc: %d]",
 			m.From, m.Index)

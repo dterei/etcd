@@ -312,7 +312,7 @@ func (n *node) run(r *raft) {
 				propc = nil
 			}
 			if gcm.gcLeader != nil {
-				gcm.gcLeader <- GCLeader{ newLeader: r.leader(), oldLeader: lead, term: r.Term}
+				gcm.gcLeader <- GCLeader{ newLeader: r.leader(), term: r.Term}
 			}
 			lead = r.leader()
 		}

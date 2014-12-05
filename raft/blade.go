@@ -46,7 +46,6 @@ type GCSwitch struct {
 
 type GCLeader struct {
 	newLeader uint64
-	oldLeader uint64
 	term      uint64
 }
 
@@ -133,6 +132,7 @@ func bladeNodeManager() {
 	id := gcm.id
 	reqInFlight := None
 	gcComplete := None
+	lastLeader := None
 
 	for {
 		select {
@@ -162,12 +162,25 @@ func bladeNodeManager() {
 		// leader changed
 		case m := <-gcm.gcLeader:
 			gcm.gcReset <- m
-			if reqInFlight != None && m.newLeader != None {
-				log.Printf("blade: resending gc [gc: %d]", reqInFlight)
-				// we run in a goroutine in case of a rare timing occurence where the
-				// raft goroutine is trying to send us a gc authorized message as we try
-				// to send it a gc request message.
-				go requestGC(reqInFlight)
+			if m.newLeader != None {
+				if reqInFlight != None {
+					if lastLeader == gcm.id {
+						// I was leader so have client requests queued, delay a moment to
+						// let them get forwarded.
+						gc := reqInFlight
+						time.AfterFunc(1 * time.Second, func() {
+							log.Printf("blade: resending gc [gc: %d] (delayed)", gc)
+							requestGC(gc)
+						})
+					} else {
+						log.Printf("blade: resending gc [gc: %d]", reqInFlight)
+						// we run in a goroutine in case of a rare timing occurence where the
+						// raft goroutine is trying to send us a gc authorized message as we try
+						// to send it a gc request message.
+						go requestGC(reqInFlight)
+					}
+				}
+				lastLeader = m.newLeader
 			}
 		}
 	}
@@ -198,9 +211,10 @@ func bladeClusterManager() {
 		select {
 		// change in number of gc slots
 		case slots = <- gcm.gcSlots:
+			log.Printf("blade manager: change of slots: %d", slots)
 
 		// old leader is explicitly switching to me so it can collect
-		case gcSwitch := <- gcm.gcSwitch:
+		case gcSwitch = <- gcm.gcSwitch:
 			log.Printf("blade manager: expecting to become leader: %v", gcSwitch)
 
 		// leader changed
@@ -208,11 +222,14 @@ func bladeClusterManager() {
 			pending.Init()
 			used = 0
 			lastCollected = None
-			if m.term != gcSwitch.term || m.newLeader != gcm.id ||
-					m.oldLeader != gcSwitch.oldLeader {
-				gcSwitch = GCSwitch{}
-			} else {
-				log.Printf("blade manager: became leader as expected")
+			if m.newLeader != None && gcSwitch.term != None {
+				if m.term == gcSwitch.term && m.newLeader == gcm.id {
+					log.Printf("blade manager: became leader as expected")
+				} else {
+					log.Printf("blade manager: not leader: (%v) vs (%v) [%d]",
+						gcSwitch, m, gcm.id)
+					gcSwitch = GCSwitch{}
+				}
 			}
 
 		// blade gc message arrived
@@ -225,7 +242,7 @@ func bladeClusterManager() {
 			case pb.MsgGCReq:
 				m.Type = pb.MsgGCAuth
 				m.To = m.From
-				if used < slots && (gcSwitch.oldLeader != None || gcSwitch.oldLeader == m.From) {
+				if used < slots && (gcSwitch.oldLeader == None || gcSwitch.oldLeader == m.From) {
 					if gcSwitch.oldLeader == m.From {
 						gcSwitch = GCSwitch{}
 					}
@@ -238,7 +255,8 @@ func bladeClusterManager() {
 						go send(m)
 					}
 				} else {
-					log.Printf("blade manager: gc queued [pr: %x, gc: %d]", m.From, m.Index)
+					log.Printf("blade manager: gc queued [pr: %x, gc: %d, used: %d, " +
+						"slots: %d, switch: %v]", m.From, m.Index, used, slots, gcSwitch)
 					pending.PushBack(m)
 				}
 
