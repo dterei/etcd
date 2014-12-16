@@ -22,6 +22,7 @@ import (
 	"log"
 	"math/rand"
 	"sort"
+  "runtime"
 
 	pb "github.com/coreos/etcd/raft/raftpb"
 )
@@ -95,6 +96,8 @@ func (p uint64Slice) Less(i, j int) bool { return p[i] < p[j] }
 func (p uint64Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 type raft struct {
+  enableGC bool
+
 	pb.HardState
 
 	id uint64
@@ -422,6 +425,16 @@ func (r *raft) randomNode() (id uint64) {
 	return
 }
 
+func (r *raft) maybePause() {
+  n := rand.Intn(5)
+  if n == 0 && r.enableGC {
+    log.Printf("Forcing GC!")
+    runtime.GC()
+  } else {
+    log.Printf("No GC: %d", n)
+  }
+}
+
 type stepFunc func(r *raft, m pb.Message)
 
 func stepLeader(r *raft, m pb.Message) {
@@ -439,6 +452,7 @@ func stepLeader(r *raft, m pb.Message) {
 			}
 			r.pendingConf = true
 		}
+    r.maybePause()
 		r.appendEntry(e)
 		r.bcastAppend()
 	case pb.MsgAppResp:
@@ -512,6 +526,7 @@ func stepFollower(r *raft, m pb.Message) {
 		m.To = r.lead
 		r.send(m)
 	case pb.MsgApp:
+    r.maybePause()
 		r.elapsed = 0
 		r.lead = m.From
 		r.handleAppendEntries(m)

@@ -41,6 +41,7 @@ import (
 )
 
 const (
+	gcPrefix                 = "/v2/gc"
 	keysPrefix               = "/v2/keys"
 	deprecatedMachinesPrefix = "/v2/machines"
 	membersPrefix            = "/v2/members"
@@ -83,6 +84,7 @@ func NewClientHandler(server *etcdserver.EtcdServer) http.Handler {
 	mux.Handle(membersPrefix, mh)
 	mux.Handle(membersPrefix+"/", mh)
 	mux.HandleFunc(leaderPrefix+"/", mh.switchLeader)
+	mux.HandleFunc(gcPrefix+"/", mh.gcHandler)
 	mux.Handle(deprecatedMachinesPrefix, dmh)
 	return mux
 }
@@ -237,6 +239,12 @@ func (h *membersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
+}
+
+func (h *membersHandler) gcHandler(w http.ResponseWriter, r *http.Request) {
+  h.server.EnableGC()
+  w.WriteHeader(http.StatusNoContent)
+  return
 }
 
 func (h *membersHandler) switchLeader(w http.ResponseWriter, r *http.Request) {

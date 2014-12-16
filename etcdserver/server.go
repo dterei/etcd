@@ -139,6 +139,8 @@ type Server interface {
 	// SwitchLeader performs a fast-leader election (if this node is currently
 	// leader), attempting to elect the peer specified. Returns the new leader.
 	SwitchLeader(ctx context.Context, id uint64) (uint64, error)
+
+  EnableGC()
 }
 
 type Stats interface {
@@ -305,6 +307,10 @@ func NewServer(cfg *ServerConfig) (*EtcdServer, error) {
 	}
 
 	return s, nil
+}
+
+func (s *EtcdServer) EnableGC() {
+  s.node.EnableGC()
 }
 
 // Start prepares and starts server in a new goroutine. It is no longer safe to

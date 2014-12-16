@@ -139,6 +139,7 @@ type Node interface {
 	// FastSwitch performs a fast-leader election (if this node is currently
 	// leader), attempting to elect the peer specified. Returns the new leader.
 	FastSwitch(ctx context.Context, id uint64) (uint64, error)
+  EnableGC()
 }
 
 type Peer struct {
@@ -211,6 +212,7 @@ type node struct {
 	done     chan struct{}
 	stop     chan struct{}
 	leader   chan FSMsg
+  enablegc chan struct{}
 }
 
 func newNode() node {
@@ -225,7 +227,12 @@ func newNode() node {
 		done:     make(chan struct{}),
 		stop:     make(chan struct{}),
 		leader:   make(chan FSMsg),
+		enablegc: make(chan struct{}),
 	}
+}
+
+func (n *node) EnableGC() {
+  n.enablegc <- struct{}{}
 }
 
 func (n *node) Stop() {
@@ -399,6 +406,9 @@ func (n *node) run(r *raft) {
 		case <-n.stop:
 			close(n.done)
 			return
+    case _ = <-n.enablegc:
+      log.Printf("Enabled GC")
+      r.enableGC = true
 		case fsMsg := <-n.leader:
 			if (fsMsg.lead == None) {
 				fsMsg.lead = r.randomNode()
