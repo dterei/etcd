@@ -54,6 +54,7 @@ message Message {
 	required uint64      commit   = 8  [(gogoproto.nullable) = false];
 	required Snapshot    snapshot = 9  [(gogoproto.nullable) = false];
 	required bool        reject   = 10 [(gogoproto.nullable) = false];
+	required uint64      id       = 11 [(gogoproto.nullable) = false];
 }
 
 message HardState {

@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/coreos/etcd/pkg/bench"
 	pb "github.com/coreos/etcd/raft/raftpb"
 )
 
@@ -191,11 +192,12 @@ func (r *raft) send(m pb.Message) {
 }
 
 // sendAppend sends RRPC, with entries to the given peer.
-func (r *raft) sendAppend(to uint64) {
+func (r *raft) sendAppend(to uint64, id uint64) {
 	pr := r.prs[to]
 	m := pb.Message{}
 	m.To = to
 	m.Index = pr.next - 1
+	m.ID = id
 	if r.needSnapshot(m.Index) {
 		m.Type = pb.MsgSnap
 		m.Snapshot = r.raftLog.snapshot
@@ -219,12 +221,12 @@ func (r *raft) sendHeartbeat(to uint64) {
 
 // bcastAppend sends RRPC, with entries to all peers that are not up-to-date
 // according to the progress recorded in r.prs.
-func (r *raft) bcastAppend() {
+func (r *raft) bcastAppend(id uint64) {
 	for i := range r.prs {
 		if i == r.id {
 			continue
 		}
-		r.sendAppend(i)
+		r.sendAppend(i, id)
 	}
 }
 
@@ -238,7 +240,7 @@ func (r *raft) bcastHeartbeat() {
 	}
 }
 
-func (r *raft) maybeCommit() bool {
+func (r *raft) maybeCommit() (bool, uint64) {
 	// TODO(bmizerany): optimize.. Currently naive
 	mis := make(uint64Slice, 0, len(r.prs))
 	for i := range r.prs {
@@ -247,7 +249,7 @@ func (r *raft) maybeCommit() bool {
 	sort.Sort(sort.Reverse(mis))
 	mci := mis[r.q()-1]
 
-	return r.raftLog.maybeCommit(mci, r.Term)
+	return r.raftLog.maybeCommit(mci, r.Term), mci
 }
 
 func (r *raft) reset(term uint64) {
@@ -381,9 +383,11 @@ func (r *raft) Step(m pb.Message) error {
 
 func (r *raft) handleAppendEntries(m pb.Message) {
 	if mlastIndex, ok := r.raftLog.maybeAppend(m.Index, m.LogTerm, m.Commit, m.Entries...); ok {
-		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: mlastIndex})
+		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: mlastIndex, ID: m.ID})
+		log.Printf("raft: [follower] accepting request %d", m.ID)
 	} else {
-		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: m.Index, Reject: true})
+		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: m.Index, Reject: true, ID: m.ID})
+		log.Printf("raft: [follower] rejecting request %d", m.ID)
 	}
 }
 
@@ -440,19 +444,25 @@ func stepLeader(r *raft, m pb.Message) {
 			r.pendingConf = true
 		}
 		r.appendEntry(e)
-		r.bcastAppend()
+		r.bcastAppend(m.ID)
 	case pb.MsgAppResp:
 		if m.Index == 0 {
 			return
 		}
 		if m.Reject {
+			log.Printf("request: [%d] [%s] rejected by follower", m.ID, bench.Snap(m.ID))
 			if r.prs[m.From].maybeDecrTo(m.Index) {
-				r.sendAppend(m.From)
+				r.sendAppend(m.From, m.ID)
 			}
 		} else {
+			log.Printf("request: [%d] [%s] accepted by follower", m.ID, bench.Snap(m.ID))
 			r.prs[m.From].update(m.Index)
-			if r.maybeCommit() {
-				r.bcastAppend()
+			if ok, mci := r.maybeCommit(); ok {
+				if mci < m.Index {
+					log.Printf("request: [%d] re-broadcasting msg [commit: %d, index: %d]",
+					mci, m.Index)
+					r.bcastAppend(m.ID)
+				}
 			}
 		}
 	case pb.MsgVote:
@@ -490,7 +500,7 @@ func stepCandidate(r *raft, m pb.Message) {
 		switch r.q() {
 		case gr:
 			r.becomeLeader()
-			r.bcastAppend()
+			r.bcastAppend(m.ID)
 		case len(r.votes) - gr:
 			r.becomeFollower(r.Term, None)
 		}

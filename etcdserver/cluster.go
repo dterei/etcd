@@ -411,7 +411,7 @@ func nodeToMember(n *store.NodeExtern) (*Member, error) {
 func membersFromStore(st store.Store) (map[types.ID]*Member, map[types.ID]bool) {
 	members := make(map[types.ID]*Member)
 	removed := make(map[types.ID]bool)
-	e, err := st.Get(storeMembersPrefix, true, true)
+	e, err := st.Get(0, storeMembersPrefix, true, true)
 	if err != nil {
 		if isKeyNotFound(err) {
 			return members, removed
@@ -426,7 +426,7 @@ func membersFromStore(st store.Store) (map[types.ID]*Member, map[types.ID]bool) 
 		members[m.ID] = m
 	}
 
-	e, err = st.Get(storeRemovedMembersPrefix, true, true)
+	e, err = st.Get(0, storeRemovedMembersPrefix, true, true)
 	if err != nil {
 		if isKeyNotFound(err) {
 			return members, removed

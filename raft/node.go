@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/Godeps/_workspace/src/code.google.com/p/go.net/context"
+	"github.com/coreos/etcd/pkg/bench"
 	pb "github.com/coreos/etcd/raft/raftpb"
 )
 
@@ -110,7 +111,7 @@ type Node interface {
 	// Campaign causes the Node to transition to candidate state and start campaigning to become leader.
 	Campaign(ctx context.Context) error
 	// Propose proposes that data be appended to the log.
-	Propose(ctx context.Context, data []byte) error
+	Propose(ctx context.Context, id uint64, data []byte) error
 	// ProposeConfChange proposes config change.
 	// At most one ConfChange can be in the process of going through consensus.
 	// Application needs to call ApplyConfChange when applying EntryConfChange type entry.
@@ -302,11 +303,11 @@ func (n *node) run(r *raft) {
 					log.Printf("raft: leader changed from %x to %x at term %d", lead, r.leader(), r.Term)
 				}
 				propc = n.propc
-        if fsReply != nil {
-          log.Printf("raft: fast-switch took %s\n", time.Since(fsTime))
-          fsReply <- FSReply{r.leader(), nil}
-          fsReply = nil
-        }
+				if fsReply != nil {
+					log.Printf("raft: fast-switch took %s\n", time.Since(fsTime))
+					fsReply <- FSReply{r.leader(), nil}
+					fsReply = nil
+				}
 			} else {
 				log.Printf("raft: lost leader %x at term %d", lead, r.Term)
 				propc = nil
@@ -339,6 +340,7 @@ func (n *node) run(r *raft) {
 		// described in raft dissertation)
 		// Currently it is dropped in Step silently.
 		case m := <-propc:
+      log.Printf("request: [%d] [%s] in node", m.ID, bench.Snap(m.ID))
 			m.From = r.id
 			r.Step(m)
 		case m := <-n.recvc:
@@ -454,8 +456,8 @@ func (n *node) Campaign(ctx context.Context) error {
 	return n.step(ctx, pb.Message{Type: pb.MsgHup})
 }
 
-func (n *node) Propose(ctx context.Context, data []byte) error {
-	return n.step(ctx, pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{Data: data}}})
+func (n *node) Propose(ctx context.Context, id uint64, data []byte) error {
+	return n.step(ctx, pb.Message{Type: pb.MsgProp, ID: id, Entries: []pb.Entry{{Data: data}}})
 }
 
 func (n *node) Step(ctx context.Context, m pb.Message) error {
@@ -524,6 +526,13 @@ func newReady(r *raft, prevSoftSt *SoftState, prevHardSt pb.HardState, prevSnapi
 		CommittedEntries: r.raftLog.nextEnts(),
 		Messages:         r.msgs,
 	}
+  
+	for _, m := range rd.Messages {
+		if m.Type == pb.MsgApp {
+			log.Printf("request: [%d] [%s] send prepared", m.ID, bench.Snap(m.ID))
+		}
+	}
+
 	if softSt := r.softState(); !softSt.equal(prevSoftSt) {
 		rd.SoftState = softSt
 	}

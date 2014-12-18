@@ -35,6 +35,7 @@ import (
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/etcdhttp/httptypes"
 	"github.com/coreos/etcd/etcdserver/etcdserverpb"
+	"github.com/coreos/etcd/pkg/bench"
 	"github.com/coreos/etcd/pkg/types"
 	"github.com/coreos/etcd/store"
 	"github.com/coreos/etcd/version"
@@ -99,19 +100,24 @@ func (h *keysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := time.Now()
 	w.Header().Set("X-Etcd-Cluster-ID", h.clusterInfo.ID().String())
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
 
-	rr, err := parseKeyRequest(r, etcdserver.GenID(), clockwork.NewRealClock())
+	rid := etcdserver.GenID()
+	log.Printf("request: [%d] [%s] [%s] start", rid, bench.Start(rid), r.Method)
+
+	rr, err := parseKeyRequest(r, rid, clockwork.NewRealClock())
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	log.Printf("request: [%d] [%s] parse", rid, bench.Snap(rid))
 
 	resp, err := h.server.Do(ctx, rr)
+	log.Printf("request: [%d] [%s] server done", rid, bench.Snap(rid))
+
 	if err != nil {
 		err = trimErrorPrefix(err, etcdserver.StoreKeysPrefix)
 		writeError(w, err)
@@ -120,7 +126,7 @@ func (h *keysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case resp.Event != nil:
-		if err := h.writeKeyEvent(w, resp.Event, h.timer, r.Method, t); err != nil {
+		if err := h.writeKeyEvent(w, resp.Event, h.timer, r.Method, rid); err != nil {
 			// Should never be reached
 			log.Printf("error writing event: %v", err)
 		}
@@ -458,7 +464,7 @@ func parseKeyRequest(r *http.Request, id uint64, clock clockwork.Clock) (etcdser
 // writeKeyEvent trims the prefix of key path in a single Event under
 // StoreKeysPrefix, serializes it and writes the resulting JSON to the given
 // ResponseWriter, along with the appropriate headers.
-func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer, meth string, t time.Time) error {
+func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt etcdserver.RaftTimer, meth string, rid uint64) error {
 	if ev == nil {
 		return errors.New("cannot write empty Event!")
 	}
@@ -473,7 +479,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		if ev.IsCreated() {
 			w.WriteHeader(http.StatusCreated)
 		}
-		log.Printf("request: %s %v\n", meth, time.Since(t))
+		log.Printf("request: [%d] %s %v\n", rid, meth, bench.End(rid))
 	} else {
 		w.Header().Set("X-Raft-Leader", fmt.Sprint(h.clusterInfo.Member(lead).Name))
 		w.Header().Set("X-Raft-ID", fmt.Sprint(h.clusterInfo.Member(myid).Name))
@@ -482,7 +488,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		} else {
 			w.WriteHeader(422)
 		}
-		log.Printf("request: %s %v [proxied]\n", meth, time.Since(t))
+		log.Printf("request: [%d] %s %v [proxied]\n", rid, meth, bench.End(rid))
 	}
 
 	ev = trimEventPrefix(ev, etcdserver.StoreKeysPrefix)

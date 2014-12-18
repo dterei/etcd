@@ -19,12 +19,14 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/coreos/etcd/pkg/bench"
 	"github.com/coreos/etcd/Godeps/_workspace/src/github.com/jonboulle/clockwork"
 	etcdErr "github.com/coreos/etcd/error"
 )
@@ -42,7 +44,7 @@ type Store interface {
 	Version() int
 	Index() uint64
 
-	Get(nodePath string, recursive, sorted bool) (*Event, error)
+	Get(id uint64, nodePath string, recursive, sorted bool) (*Event, error)
 	Set(nodePath string, dir bool, value string, expireTime time.Time) (*Event, error)
 	Update(nodePath string, newValue string, expireTime time.Time) (*Event, error)
 	Create(nodePath string, dir bool, value string, unique bool,
@@ -103,13 +105,14 @@ func (s *store) Index() uint64 {
 // Get returns a get event.
 // If recursive is true, it will return all the content under the node path.
 // If sorted is true, it will sort the content by keys.
-func (s *store) Get(nodePath string, recursive, sorted bool) (*Event, error) {
+func (s *store) Get(id uint64, nodePath string, recursive, sorted bool) (*Event, error) {
 	s.worldLock.RLock()
 	defer s.worldLock.RUnlock()
 
-	nodePath = path.Clean(path.Join("/", nodePath))
+	log.Printf("request: [%d] [%s] store lock", id, bench.Snap(id))
 
-	n, err := s.internalGet(nodePath)
+	n, err := s.internalGet(id, nodePath)
+	log.Printf("request: [%d] [%s] internal done", id, bench.Snap(id))
 
 	if err != nil {
 		s.Stats.Inc(GetFail)
@@ -160,7 +163,7 @@ func (s *store) Set(nodePath string, dir bool, value string, expireTime time.Tim
 	}()
 
 	// Get prevNode value
-	n, getErr := s.internalGet(nodePath)
+	n, getErr := s.internalGet(0, nodePath)
 	if getErr != nil && getErr.ErrorCode != etcdErr.EcodeKeyNotFound {
 		err = getErr
 		return nil, err
@@ -209,7 +212,7 @@ func (s *store) CompareAndSwap(nodePath string, prevValue string, prevIndex uint
 		return nil, etcdErr.NewError(etcdErr.EcodeRootROnly, "/", s.CurrentIndex)
 	}
 
-	n, err := s.internalGet(nodePath)
+	n, err := s.internalGet(0, nodePath)
 
 	if err != nil {
 		s.Stats.Inc(CompareAndSwapFail)
@@ -269,7 +272,7 @@ func (s *store) Delete(nodePath string, dir, recursive bool) (*Event, error) {
 		dir = true
 	}
 
-	n, err := s.internalGet(nodePath)
+	n, err := s.internalGet(0, nodePath)
 
 	if err != nil { // if the node does not exist, return error
 		s.Stats.Inc(DeleteFail)
@@ -314,7 +317,7 @@ func (s *store) CompareAndDelete(nodePath string, prevValue string, prevIndex ui
 	s.worldLock.Lock()
 	defer s.worldLock.Unlock()
 
-	n, err := s.internalGet(nodePath)
+	n, err := s.internalGet(0, nodePath)
 
 	if err != nil { // if the node does not exist, return error
 		s.Stats.Inc(CompareAndDeleteFail)
@@ -373,13 +376,15 @@ func (s *store) Watch(key string, recursive, stream bool, sinceIndex uint64) (Wa
 }
 
 // walk walks all the nodePath and apply the walkFunc on each directory
-func (s *store) walk(nodePath string, walkFunc func(prev *node, component string) (*node, *etcdErr.Error)) (*node, *etcdErr.Error) {
+func (s *store) walk(id uint64, nodePath string, walkFunc func(prev *node, component string) (*node, *etcdErr.Error)) (*node, *etcdErr.Error) {
 	components := strings.Split(nodePath, "/")
 
 	curr := s.Root
 	var err *etcdErr.Error
 
 	for i := 1; i < len(components); i++ {
+		log.Printf("request: [%d] [%s] walk: %d", id, bench.Snap(id), i)
+
 		if len(components[i]) == 0 { // ignore empty string
 			return curr, nil
 		}
@@ -388,7 +393,6 @@ func (s *store) walk(nodePath string, walkFunc func(prev *node, component string
 		if err != nil {
 			return nil, err
 		}
-
 	}
 
 	return curr, nil
@@ -409,7 +413,7 @@ func (s *store) Update(nodePath string, newValue string, expireTime time.Time) (
 
 	currIndex, nextIndex := s.CurrentIndex, s.CurrentIndex+1
 
-	n, err := s.internalGet(nodePath)
+	n, err := s.internalGet(0, nodePath)
 
 	if err != nil { // if the node does not exist, return error
 		s.Stats.Inc(UpdateFail)
@@ -476,7 +480,7 @@ func (s *store) internalCreate(nodePath string, dir bool, value string, unique, 
 	dirName, nodeName := path.Split(nodePath)
 
 	// walk through the nodePath, create dirs and get the last directory node
-	d, err := s.walk(dirName, s.checkDir)
+	d, err := s.walk(0, dirName, s.checkDir)
 
 	if err != nil {
 		s.Stats.Inc(SetFail)
@@ -532,7 +536,7 @@ func (s *store) internalCreate(nodePath string, dir bool, value string, unique, 
 }
 
 // InternalGet gets the node of the given nodePath.
-func (s *store) internalGet(nodePath string) (*node, *etcdErr.Error) {
+func (s *store) internalGet(id uint64, nodePath string) (*node, *etcdErr.Error) {
 	nodePath = path.Clean(path.Join("/", nodePath))
 
 	walkFunc := func(parent *node, name string) (*node, *etcdErr.Error) {
@@ -550,12 +554,7 @@ func (s *store) internalGet(nodePath string) (*node, *etcdErr.Error) {
 		return nil, etcdErr.NewError(etcdErr.EcodeKeyNotFound, path.Join(parent.Path, name), s.CurrentIndex)
 	}
 
-	f, err := s.walk(nodePath, walkFunc)
-
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
+  return s.walk(id, nodePath, walkFunc)
 }
 
 // deleteExpiredKyes will delete all

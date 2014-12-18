@@ -438,7 +438,7 @@ func (s *EtcdServer) Do(ctx context.Context, r pb.Request) (Response, error) {
 			return Response{}, err
 		}
 		ch := s.w.Register(r.ID)
-		s.node.Propose(ctx, data)
+		s.node.Propose(ctx, r.ID, data)
 		select {
 		case x := <-ch:
 			resp := x.(Response)
@@ -458,14 +458,14 @@ func (s *EtcdServer) Do(ctx context.Context, r pb.Request) (Response, error) {
 			}
 			return Response{Watcher: wc}, nil
 		default:
-			ev, err := s.store.Get(r.Path, r.Recursive, r.Sorted)
+			ev, err := s.store.Get(r.ID, r.Path, r.Recursive, r.Sorted)
 			if err != nil {
 				return Response{}, err
 			}
 			return Response{Event: ev}, nil
 		}
 	case "HEAD":
-		ev, err := s.store.Get(r.Path, r.Recursive, r.Sorted)
+		ev, err := s.store.Get(r.ID, r.Path, r.Recursive, r.Sorted)
 		if err != nil {
 			return Response{}, err
 		}
@@ -580,7 +580,7 @@ func (s *EtcdServer) sync(timeout time.Duration) {
 	// There is no promise that node has leader when do SYNC request,
 	// so it uses goroutine to propose.
 	go func() {
-		s.node.Propose(ctx, data)
+		s.node.Propose(ctx, req.ID, data)
 		cancel()
 	}()
 }
@@ -692,7 +692,7 @@ func (s *EtcdServer) applyRequest(r pb.Request) Response {
 			return f(s.store.Delete(r.Path, r.Dir, r.Recursive))
 		}
 	case "QGET":
-		return f(s.store.Get(r.Path, r.Recursive, r.Sorted))
+		return f(s.store.Get(r.ID, r.Path, r.Recursive, r.Sorted))
 	case "SYNC":
 		s.store.DeleteExpiredKeys(time.Unix(0, r.Time))
 		return Response{}

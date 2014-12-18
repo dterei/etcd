@@ -157,7 +157,19 @@ func init() {
 	fs.Var(&flags.DeprecatedFlag{Name: "peers-file"}, "peers-file", "DEPRECATED: Use -initial-cluster instead")
 }
 
+func alignStart() {
+	log.Printf("etcd: start time %s", time.Now())
+	t := time.Now()
+	t = t.Add(10 * time.Second)
+	t = t.Round(2 * time.Second)
+	log.Printf("etcd: delaying start until %s", t)
+	time.Sleep(t.Sub(time.Now()))
+	log.Printf("etcd: starting %s", time.Now())
+}
+
 func Main() {
+	// alignStart()
+
 	fs.Usage = flags.UsageWithIgnoredFlagsFunc(fs, ignored)
 	perr := fs.Parse(os.Args[1:])
 	switch perr {

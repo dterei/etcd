@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/etcdserver/stats"
+	"github.com/coreos/etcd/pkg/bench"
 	"github.com/coreos/etcd/pkg/types"
 	"github.com/coreos/etcd/raft/raftpb"
 )
@@ -71,6 +72,10 @@ func (h *sendHub) Send(msgs []raftpb.Message) {
 				log.Printf("etcdserver: send message to unknown receiver %s", to)
 			}
 			continue
+		}
+
+		if m.Type == raftpb.MsgApp {
+			log.Printf("request: [%d] [%s] send", m.ID, bench.Snap(m.ID))
 		}
 
 		// TODO: don't block. we should be able to have 1000s

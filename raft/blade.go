@@ -168,7 +168,7 @@ func bladeNodeManager() {
 						// I was leader so have client requests queued, delay a moment to
 						// let them get forwarded.
 						gc := reqInFlight
-						time.AfterFunc(1500 * time.Millisecond, func() {
+						time.AfterFunc(500 * time.Millisecond, func() {
 							log.Printf("blade: resending gc [gc: %d] (delayed)", gc)
 							requestGC(gc)
 						})
@@ -196,7 +196,7 @@ func bladeClusterManager() {
 
 	switchLeader := func(cand uint64) {
 		// delay to allow cluster to catch up in case of lots of recent collections
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 		log.Printf("blade manager: switching leader [pr: %d]", cand)
 		gcm.n.FastSwitch(context.TODO(), cand)
 		// we don't resend here as we rely on bladeNodeManager instead
