@@ -355,11 +355,10 @@ func (r *raft) campaign() {
 }
 
 func (r *raft) Step(m pb.Message) error {
-	// TODO(bmizerany): this likely allocs - prevent that.
-	defer func() { r.Commit = r.raftLog.committed }()
-
 	if m.Type == pb.MsgHup {
 		r.campaign()
+		r.Commit = r.raftLog.committed
+		return nil
 	}
 
 	switch {
@@ -376,6 +375,7 @@ func (r *raft) Step(m pb.Message) error {
 		return nil
 	}
 	r.step(r, m)
+	r.Commit = r.raftLog.committed
 	return nil
 }
 
