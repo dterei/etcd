@@ -282,6 +282,9 @@ func NewServer(cfg *ServerConfig) (*EtcdServer, error) {
 	lstats := stats.NewLeaderStats(id.String())
 
 	shub := newSendHub(cfg.Transport, cfg.Cluster, sstats, lstats)
+	for _, m := range getOtherMembers(cfg.Cluster, cfg.Name) {
+		shub.Add(m)
+	}
 	s := &EtcdServer{
 		store:      st,
 		node:       n,
@@ -864,6 +867,16 @@ func startNode(cfg *ServerConfig, ids []types.ID) (id types.ID, n raft.Node, w *
 	log.Printf("etcdserver: start member %s in cluster %s", id, cfg.Cluster.ID())
 	n = raft.StartNode(uint64(id), peers, 10, 1)
 	return
+}
+
+func getOtherMembers(cl ClusterInfo, self string) []*Member {
+	var ms []*Member
+	for _, m := range cl.Members() {
+		if m.Name != self {
+			ms = append(ms, m)
+		}
+	}
+	return ms
 }
 
 // getOtherPeerURLs returns peer urls of other members in the cluster. The

@@ -49,17 +49,13 @@ type sendHub struct {
 // to other members. The returned sendHub will update the given ServerStats and
 // LeaderStats appropriately.
 func newSendHub(t *http.Transport, cl ClusterInfo, ss *stats.ServerStats, ls *stats.LeaderStats) *sendHub {
-	h := &sendHub{
+	return &sendHub{
 		tr:      t,
 		cl:      cl,
 		ss:      ss,
 		ls:      ls,
 		senders: make(map[types.ID]*sender),
 	}
-	for _, m := range cl.Members() {
-		h.Add(m)
-	}
-	return h
 }
 
 func (h *sendHub) Send(msgs []raftpb.Message) {
