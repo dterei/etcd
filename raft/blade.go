@@ -35,7 +35,7 @@ const (
 var gcm *GCManager
 
 type GCMsg struct {
-	gcID    uint64
+	gcID    uint32
 	timeout bool
 }
 
@@ -54,10 +54,9 @@ type GCManager struct {
 	minHeap  uint64
 	minPause uint64
 	n        Node
-	gcnum    uint64
 
 	gcRun    chan GCMsg
-	gcLocal  chan uint64
+	gcLocal  chan uint32
 	gcLeader chan GCLeader
 
 	gcReq    chan pb.Message
@@ -77,7 +76,7 @@ func InitBladeGC(heapMin, pauseMin uint64) {
 		minPause: pauseMin,
 
 		gcRun:    make(chan GCMsg),
-		gcLocal:  make(chan uint64),
+		gcLocal:  make(chan uint32),
 		// XXX: critical to buffer to prevent deadlock with raft goroutine
 		gcLeader: make(chan GCLeader, 5),
 
@@ -97,31 +96,31 @@ func StartBladeGC(nodeID uint64, n Node) {
 	}
 	gcm.id = nodeID
 	gcm.n = n
-	runtime.RegisterGCCallback(gcCallback)
+	runtime.RegisterGCCallback(deferGCCallback)
 }
 
-// gcCallback handles a GC request from the RTS
-func gcCallback(alloc, lastPause int64, ret *int64) {
-	gcm.gcnum++
-	if uint64(lastPause) < gcm.minPause && uint64(alloc) < gcm.minHeap {
+// deferGCCallback handles a GC request from the RTS
+func deferGCCallback(gcnum uint32, alloc, lastPause uint64) bool {
+	if lastPause < gcm.minPause && alloc < gcm.minHeap {
 		// log.Printf("blade: ignoring gc [#: %d, alloc: %d, pause: %d]",
 		// 	gcm.gcnum, alloc, lastPause)
-		*ret = 0
+		return false
 	} else {
 		log.Printf("blade: starting gc [#: %d, alloc: %d, pause: %d]",
-			gcm.gcnum, alloc, lastPause)
-		*ret = 1
+			gcnum, alloc, lastPause)
 		go func() {
-			gcm.gcLocal <- gcm.gcnum
-			requestGC(gcm.gcnum)
+			gcm.gcLocal <- gcnum
+			requestGC(gcnum)
 		}()
+		return true
 	}
 }
 
 // requestGC starts a new blade GC.
-func requestGC(gc uint64) {
+func requestGC(gc uint32) {
 	ctx, cancel := context.WithTimeout(context.Background(), GC_BLADE_TIMEOUT)
-	err := gcm.n.Step(ctx, pb.Message{Type: pb.MsgGCReq, Index: gc, From: gcm.id})
+	err := gcm.n.Step(ctx, pb.Message{
+		Type: pb.MsgGCReq, Index: uint64(gc), From: gcm.id})
 	cancel()
 	if err != nil { gcm.gcRun <- GCMsg{gc, true} }
 }
@@ -130,8 +129,7 @@ func requestGC(gc uint64) {
 // respond.
 func bladeNodeManager() {
 	id := gcm.id
-	reqInFlight := None
-	gcComplete := None
+	var reqInFlight, gcComplete uint32
 	lastLeader := None
 
 	for {
@@ -142,7 +140,7 @@ func bladeNodeManager() {
 		// gc authorized
 		case m := <-gcm.gcRun:
 			if m.gcID <= gcComplete { continue }
-			reqInFlight = None
+			reqInFlight = 0
 			gcComplete = m.gcID
 
 			if (m.timeout) {
@@ -156,14 +154,15 @@ func bladeNodeManager() {
 			// XXX: is their a possible timing deadlock where we try to send the raft
 			// goroutine this message as it is trying to send one to us?
 			ctx, cancel := context.WithTimeout(context.Background(), GC_BLADE_TIMEOUT)
-			gcm.n.Step(ctx, pb.Message{Type: pb.MsgGCDone, Index: m.gcID, From: id})
+			gcm.n.Step(ctx, pb.Message{
+				Type: pb.MsgGCDone, Index: uint64(m.gcID), From: id})
 			cancel()
 
 		// leader changed
 		case m := <-gcm.gcLeader:
 			gcm.gcReset <- m
 			if m.newLeader != None {
-				if reqInFlight != None {
+				if reqInFlight != 0 {
 					if lastLeader == gcm.id {
 						// I was leader so have client requests queued, delay a moment to
 						// let them get forwarded.
