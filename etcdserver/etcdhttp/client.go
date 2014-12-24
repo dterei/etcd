@@ -473,7 +473,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		if ev.IsCreated() {
 			w.WriteHeader(http.StatusCreated)
 		}
-		log.Printf("request: %s %v\n", meth, time.Since(t))
+		// log.Printf("request: %s %v\n", meth, time.Since(t))
 	} else {
 		w.Header().Set("X-Raft-Leader", fmt.Sprint(h.clusterInfo.Member(lead).Name))
 		w.Header().Set("X-Raft-ID", fmt.Sprint(h.clusterInfo.Member(myid).Name))
@@ -482,7 +482,7 @@ func (h *keysHandler) writeKeyEvent(w http.ResponseWriter, ev *store.Event, rt e
 		} else {
 			w.WriteHeader(422)
 		}
-		log.Printf("request: %s %v [proxied]\n", meth, time.Since(t))
+		// log.Printf("request: %s %v [proxied]\n", meth, time.Since(t))
 	}
 
 	ev = trimEventPrefix(ev, etcdserver.StoreKeysPrefix)
