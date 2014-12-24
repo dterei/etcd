@@ -509,7 +509,7 @@ func stepCandidate(r *raft, m pb.Message) {
 		// for GC across unexpected leader changes.
 		log.Printf("raft: [candidate] error GCAllowed! [from: %x, gc: %d]\n",
 			m.From, m.Index)
-		if gcm != nil { gcm.gcRun <- GCMsg{m.Index, false} }
+		if gcm != nil { gcm.gcRun <- GCMsg{uint32(m.Index), false} }
 	}
 }
 
@@ -556,7 +556,7 @@ func stepFollower(r *raft, m pb.Message) {
 	case pb.MsgGCAllowed:
 		log.Printf("blade: [follower] gc allowed! [from: %x, gc: %d]",
 			m.From, m.Index)
-		if gcm != nil { gcm.gcRun <- GCMsg{m.Index, false} }
+		if gcm != nil { gcm.gcRun <- GCMsg{uint32(m.Index), false} }
 	}
 }
 
