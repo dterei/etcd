@@ -71,6 +71,7 @@ var (
 	blade           = fs.Bool("blade", false, "Use Blade to manage the GC")
 	bladeMinHeap    = fs.Uint64("blade-min-heap", defaultBladeAlloc, "Minimum heap size (kb) at which to use Blade")
 	bladeMinPause   = fs.Duration("blade-min-pause", defaultBladePause, "Minimum expected GC pause (ns) for which to use Blade")
+	syncStart       = fs.Uint64("sync-start", 0, "Sync start of server to a time")
 
 	initialCluster      = fs.String("initial-cluster", "default=http://localhost:2380,default=http://localhost:7001", "Initial cluster configuration for bootstrapping")
 	initialClusterToken = fs.String("initial-cluster-token", "etcd-cluster", "Initial cluster token for the etcd cluster during bootstrap")
@@ -171,6 +172,19 @@ func Main() {
 	if *printVersion {
 		fmt.Println("etcd version", version.Version)
 		os.Exit(0)
+	}
+
+	if *syncStart > 0 {
+		now := time.Now()
+		when := time.Now().Truncate(1 * time.Second)
+		if *syncStart < uint64(now.Second()) {
+			when.Add(1 * time.Minute)
+			when.Add(-time.Duration(now.Second() - int(*syncStart)) * time.Second)
+		} else {
+			when.Add(time.Duration(int(*syncStart) - now.Second()) * time.Second)
+		}
+    fmt.Printf("Syncing start to: %s\n", when)
+		time.Sleep(when.Sub(time.Now()))
 	}
 
 	err := flags.SetFlagsFromEnv(fs)
