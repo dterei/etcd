@@ -159,6 +159,8 @@ func init() {
 }
 
 func Main() {
+	start := time.Now()
+
 	fs.Usage = flags.UsageWithIgnoredFlagsFunc(fs, ignored)
 	perr := fs.Parse(os.Args[1:])
 	switch perr {
@@ -179,11 +181,11 @@ func Main() {
 		when := time.Now().Truncate(1 * time.Second)
 		if *syncStart < uint64(now.Second()) {
 			when.Add(1 * time.Minute)
-			when.Add(-time.Duration(now.Second() - int(*syncStart)) * time.Second)
+			when.Add(-time.Duration(now.Second()-int(*syncStart)) * time.Second)
 		} else {
-			when.Add(time.Duration(int(*syncStart) - now.Second()) * time.Second)
+			when.Add(time.Duration(int(*syncStart)-now.Second()) * time.Second)
 		}
-    fmt.Printf("Syncing start to: %s\n", when)
+		fmt.Printf("Syncing start to: %s\n", when)
 		time.Sleep(when.Sub(time.Now()))
 	}
 
@@ -206,6 +208,10 @@ func Main() {
 	if err != nil {
 		log.Fatalf("etcd: %v", err)
 	}
+
+	took := time.Since(start)
+	fmt.Printf("Startup Cost: %v\n", took)
+
 	// Block indefinitely
 	<-make(chan struct{})
 }
@@ -303,7 +309,7 @@ func startEtcd() error {
 			for now := range c {
 				runtime.ReadMemStats(&m)
 				log.Printf("etcd: [%v] Total: %dkb | Heap: %dkb | Stack: %dkb\n",
-					now, m.Alloc / 1024, m.HeapAlloc / 1024, m.StackInuse / 1024)
+					now, m.Alloc/1024, m.HeapAlloc/1024, m.StackInuse/1024)
 			}
 		}()
 	}
