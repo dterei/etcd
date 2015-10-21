@@ -20,7 +20,7 @@ package raft
 import (
 	"container/list"
 	"log"
-	"runtime"
+	_ "runtime"
 	"time"
 
 	"github.com/coreos/etcd/Godeps/_workspace/src/code.google.com/p/go.net/context"
@@ -96,7 +96,7 @@ func StartBladeGC(nodeID uint64, n Node) {
 	}
 	gcm.id = nodeID
 	gcm.n = n
-	runtime.RegisterGCCallback(deferGCCallback)
+	// runtime.RegisterGCCallback(deferGCCallback)
 }
 
 // deferGCCallback handles a GC request from the RTS
@@ -148,7 +148,7 @@ func bladeNodeManager() {
 			} else {
 				log.Printf("blade: gc authorized [gc: %d]", m.gcID)
 			}
-			runtime.GCStart()
+			// runtime.GCStart()
 			log.Printf("blade: gc finished [gc: %d]", m.gcID)
 
 			// XXX: is their a possible timing deadlock where we try to send the raft

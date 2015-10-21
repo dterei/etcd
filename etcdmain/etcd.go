@@ -314,6 +314,10 @@ func startEtcd() error {
 		}()
 	}
 
+	if *blade {
+		panic( "Can't use blade with Go 1.5!" )
+	}
+
 	cfg := &etcdserver.ServerConfig{
 		Name:            *name,
 		ClientURLs:      acurls,
